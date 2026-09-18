@@ -9,11 +9,11 @@ The action:
 
 - reads pull-request metadata, trees and blobs with GitHub REST;
 - rejects binary, truncated, executable-unsupported, oversized or stale material;
-- gives source text to a caller-installed, integrity-verified Claude binary with tools disabled;
+- returns source text only to trusted Harness main source, which invokes its caller-installed, integrity-verified Claude binary with tools disabled;
 - never checks out, imports, shells, or otherwise executes Harness candidate code;
-- removes GitHub and dedicated-App credentials from the Claude child environment; and
-- returns a strict result only to the trusted caller, which alone posts the distinct `ads/external-bootstrap-review` context through the Harness’s dedicated statuses App.
+- never receives Claude OAuth or dedicated-App credentials; and
+- returns strict material only to the trusted caller, which alone invokes Claude and posts the distinct `ads/external-bootstrap-review` context through the Harness’s dedicated statuses App.
 
-It owns no App token or key. The Harness supplies its existing main-only Claude
-credential only to an immutable SHA it has independently admitted; its separate
-trusted publisher keeps the dedicated-App key in a different environment.
+It owns no OAuth token, App token or key. The Harness supplies its existing
+main-only Claude credential only to its own checked-out trusted `main` source;
+its separate trusted publisher keeps the dedicated-App key in a different environment.

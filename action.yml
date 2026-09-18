@@ -1,28 +1,31 @@
-name: ADS external bootstrap evaluator
-description: Read one Harness pull request as data, obtain bounded Claude review, and publish a distinct dedicated-App status.
+name: ADS external bootstrap material collector
+description: Read one Harness pull request as bounded data for a trusted caller-owned Claude review.
 inputs:
-  claude-bin:
-    description: Absolute path to the caller-installed, integrity-verified Claude binary.
+  expected-head:
+    description: Exact current 40-character pull-request head required by the trusted caller.
     required: true
   pull-number:
     description: Optional decimal pull-request number for trusted workflow_dispatch retries.
     default: ""
 outputs:
-  result:
-    description: Strict, identity-bound external review result for the trusted caller to publish.
-    value: ${{ steps.evaluate.outputs.result }}
+  material:
+    description: Strict, identity-bound bounded source material for trusted Harness main source.
+    value: ${{ steps.evaluate.outputs.material }}
+  reason:
+    description: Bounded refusal reason when material is unavailable.
+    value: ${{ steps.evaluate.outputs.reason }}
 runs:
   using: composite
   steps:
-    - name: Evaluate source-only pull request
+    - name: Collect source-only pull request material
       id: evaluate
       shell: bash
       env:
-        ADS_CLAUDE_BIN: ${{ inputs.claude-bin }}
         ADS_PULL_NUMBER: ${{ inputs.pull-number }}
+        ADS_EXPECTED_HEAD: ${{ inputs.expected-head }}
       run: |
         set -euo pipefail
         python3 "$GITHUB_ACTION_PATH/src/evaluate.py" \
           --event-path "$GITHUB_EVENT_PATH" \
           --pull-number "$ADS_PULL_NUMBER" \
-          --claude-bin "$ADS_CLAUDE_BIN"
+          --expected-head "$ADS_EXPECTED_HEAD"

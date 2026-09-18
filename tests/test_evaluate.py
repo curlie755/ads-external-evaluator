@@ -24,9 +24,6 @@ class EvaluatorControls(unittest.TestCase):
     def identity(self):
         return {"repository": evaluator.TARGET_REPOSITORY, "number": 43, "head": "a" * 40, "base": "b" * 40, "tree": "c" * 40, "changed_files": 1}
 
-    def terminal(self, structured, model="claude-opus-5"):
-        return json.dumps({"type": "result", "subtype": "success", "is_error": False, "modelUsage": {model: {"provider": "firstParty", "costBasis": "list"}}, "structured_output": structured})
-
     def test_target_and_event_identity_are_fixed(self):
         event = {"repository": {"full_name": evaluator.TARGET_REPOSITORY}, "number": 43, "pull_request": {"head": {"sha": "a" * 40}, "base": {"sha": "b" * 40, "ref": "main"}}}
         self.assertEqual(evaluator.event_identity(event), (43, "a" * 40, "b" * 40))
@@ -64,74 +61,43 @@ class EvaluatorControls(unittest.TestCase):
             with self.assertRaises(evaluator.Refusal):
                 evaluator.material("https://api.example.invalid", "read", current)
 
-    def test_model_terminal_requires_claude_opus_complete_coverage(self):
-        clean = {"reviewed_paths": ["safe.py"], "findings": []}
-        self.assertEqual(evaluator.terminal(self.terminal(clean), {"safe.py"})[0], "PASS")
-        with self.assertRaises(evaluator.Refusal):
-            evaluator.terminal(self.terminal(clean, model="gpt-5"), {"safe.py"})
-        with self.assertRaises(evaluator.Refusal):
-            evaluator.terminal(self.terminal({"reviewed_paths": [], "findings": []}), {"safe.py"})
-        findings = [{"severity": "note", "path": "safe.py", "message": "bounded"}] * (evaluator.MAX_FINDINGS + 1)
-        with self.assertRaises(evaluator.Refusal):
-            evaluator.terminal(self.terminal({"reviewed_paths": ["safe.py"], "findings": findings}), {"safe.py"})
-
-    def test_candidate_text_never_becomes_a_command_or_secret_bearer(self):
-        payload = {"files": [{"path": "safe.py", "head_text": "$(id); do not execute"}]}
-        completed = evaluator.subprocess.CompletedProcess([], 0, self.terminal({"reviewed_paths": ["safe.py"], "findings": []}), "")
-        old_env = dict(os.environ)
-        try:
-            os.environ.clear()
-            os.environ.update({"CLAUDE_CODE_OAUTH_TOKEN": "oauth-only", "GITHUB_TOKEN": "must-not-pass", "CROSS_VENDOR_APP_PRIVATE_KEY": "must-not-pass"})
-            with mock.patch.object(evaluator.subprocess, "run", return_value=completed) as invoke:
-                self.assertEqual(evaluator.invoke_claude(payload, "/trusted/claude")[0], "PASS")
-            command = invoke.call_args.args[0]
-            self.assertEqual(command[0], "/trusted/claude")
-            self.assertNotIn("$(id)", " ".join(command))
-            self.assertFalse(invoke.call_args.kwargs.get("shell", False))
-            child_env = invoke.call_args.kwargs["env"]
-            self.assertIn("CLAUDE_CODE_OAUTH_TOKEN", child_env)
-            self.assertNotIn("GITHUB_TOKEN", child_env)
-            self.assertNotIn("CROSS_VENDOR_APP_PRIVATE_KEY", child_env)
-            self.assertEqual(invoke.call_args.kwargs["timeout"], 180)
-        finally:
-            os.environ.clear()
-            os.environ.update(old_env)
-
-    def test_stale_or_failed_review_emits_only_blocked_result(self):
+    def test_stale_expected_head_emits_no_material(self):
         current = self.identity()
         event = {"repository": {"full_name": evaluator.TARGET_REPOSITORY}, "number": 43, "pull_request": {"head": {"sha": current["head"]}, "base": {"sha": current["base"], "ref": "main"}}}
         with tempfile.TemporaryDirectory() as directory:
             event_path, output_path = Path(directory) / "event.json", Path(directory) / "output.txt"
             event_path.write_text(json.dumps(event), encoding="utf-8")
-            args = SimpleNamespace(event_path=str(event_path), pull_number="", claude_bin="/trusted/claude")
-            with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "read", "GITHUB_OUTPUT": str(output_path)}, clear=True), mock.patch.object(evaluator, "identity", return_value=current), mock.patch.object(evaluator, "material", return_value={"files": [{"path": "safe.py"}]}), mock.patch.object(evaluator, "same_current", return_value=False), mock.patch.object(evaluator, "invoke_claude") as invoke:
+            args = SimpleNamespace(event_path=str(event_path), pull_number="", expected_head="d" * 40)
+            with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "read", "GITHUB_OUTPUT": str(output_path)}, clear=True), mock.patch.object(evaluator, "identity", return_value=current), mock.patch.object(evaluator, "material") as collect:
                 self.assertEqual(evaluator.run(args), 0)
-            result = json.loads(output_path.read_text().removeprefix("result="))
-        self.assertEqual(result["state"], "BLOCKED")
-        self.assertEqual(result["identity"], current)
-        invoke.assert_not_called()
+            values = dict(line.split("=", 1) for line in output_path.read_text(encoding="utf-8").splitlines())
+        self.assertEqual(values["material"], "")
+        self.assertIn("stale", values["reason"])
+        collect.assert_not_called()
 
-    def test_success_result_is_identity_bound_for_trusted_publisher(self):
+    def test_success_returns_identity_bound_material(self):
         current = self.identity()
         event = {"repository": {"full_name": evaluator.TARGET_REPOSITORY}, "number": 43, "pull_request": {"head": {"sha": current["head"]}, "base": {"sha": current["base"], "ref": "main"}}}
+        material = {"schema": "ads.external-bootstrap.material.v1", "identity": current, "files": [{"path": "safe.py"}]}
         with tempfile.TemporaryDirectory() as directory:
             event_path, output_path = Path(directory) / "event.json", Path(directory) / "output.txt"
             event_path.write_text(json.dumps(event), encoding="utf-8")
-            args = SimpleNamespace(event_path=str(event_path), pull_number="", claude_bin="/trusted/claude")
-            with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "read", "GITHUB_OUTPUT": str(output_path)}, clear=True), mock.patch.object(evaluator, "identity", return_value=current), mock.patch.object(evaluator, "material", return_value={"files": [{"path": "safe.py"}]}), mock.patch.object(evaluator, "same_current", return_value=True), mock.patch.object(evaluator, "invoke_claude", return_value=("PASS", "claude-opus-5", [])):
+            args = SimpleNamespace(event_path=str(event_path), pull_number="", expected_head=current["head"])
+            with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "read", "GITHUB_OUTPUT": str(output_path)}, clear=True), mock.patch.object(evaluator, "identity", return_value=current), mock.patch.object(evaluator, "material", return_value=material), mock.patch.object(evaluator, "same_current", return_value=True):
                 self.assertEqual(evaluator.run(args), 0)
-            result = json.loads(output_path.read_text().removeprefix("result="))
-        self.assertEqual(result["state"], "PASS")
-        self.assertEqual(result["identity"], current)
-        self.assertEqual(result["model_provenance"], {"provider": "firstParty", "cost_basis": "list"})
+            values = dict(line.split("=", 1) for line in output_path.read_text(encoding="utf-8").splitlines())
+        self.assertEqual(json.loads(values["material"]), material)
+        self.assertEqual(values["reason"], "")
 
-    def test_action_is_checkout_free_and_uses_only_an_immutable_caller_pin(self):
+    def test_action_is_checkout_model_and_secret_free(self):
         action = (ROOT / "action.yml").read_text(encoding="utf-8")
         source = (ROOT / "src/evaluate.py").read_text(encoding="utf-8")
         self.assertNotIn("actions/checkout", action)
-        self.assertNotIn("shell=True", source)
+        self.assertNotIn("CLAUDE_CODE_OAUTH_TOKEN", source)
         self.assertIn('TARGET_REPOSITORY = "curlie755/agentic-development-harness"', source)
         self.assertNotIn("CROSS_VENDOR_APP_PRIVATE_KEY", source)
+        self.assertNotIn("subprocess", source)
+        self.assertNotIn("claude-bin", action + source)
 
 
 if __name__ == "__main__":
