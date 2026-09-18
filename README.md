@@ -12,7 +12,8 @@ The action:
 - gives source text to a caller-installed, integrity-verified Claude binary with tools disabled;
 - never checks out, imports, shells, or otherwise executes Harness candidate code;
 - removes GitHub and dedicated-App credentials from the Claude child environment; and
-- posts the distinct `ads/external-bootstrap-review` context only through the Harness’s dedicated statuses App.
+- returns a strict result only to the trusted caller, which alone posts the distinct `ads/external-bootstrap-review` context through the Harness’s dedicated statuses App.
 
-It owns no token or key. The Harness supplies its existing main-only environment
-credentials only to an immutable SHA it has independently admitted.
+It owns no App token or key. The Harness supplies its existing main-only Claude
+credential only to an immutable SHA it has independently admitted; its separate
+trusted publisher keeps the dedicated-App key in a different environment.
