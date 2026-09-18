@@ -88,15 +88,19 @@ def get(api: str, token: str, endpoint: str) -> Any:
     return api_request("GET", api, endpoint, token)
 
 
-def event_identity(event: dict[str, Any]) -> tuple[int, str, str]:
+def event_identity(event: dict[str, Any], requested_number: str = "") -> tuple[int, str | None, str | None]:
     repository, pull = event.get("repository"), event.get("pull_request")
     if not isinstance(repository, dict) or repository.get("full_name") != TARGET_REPOSITORY:
         raise Refusal("only the configured Harness repository is eligible")
-    if not isinstance(pull, dict) or not isinstance(pull.get("head"), dict) or not isinstance(pull.get("base"), dict) or pull["base"].get("ref") != "main":
-        raise Refusal("only Harness pull requests targeting main are eligible")
-    number = event.get("number")
+    number = event.get("number") if isinstance(pull, dict) else requested_number
+    if isinstance(number, str) and re.fullmatch(r"[1-9][0-9]*", number):
+        number = int(number)
     if type(number) is not int or number < 1:
         raise Refusal("invalid pull request number")
+    if not isinstance(pull, dict):
+        return number, None, None
+    if not isinstance(pull.get("head"), dict) or not isinstance(pull.get("base"), dict) or pull["base"].get("ref") != "main":
+        raise Refusal("only Harness pull requests targeting main are eligible")
     head = sha(pull["head"].get("sha"))
     base = sha(pull["base"].get("sha"))
     return number, head, base
@@ -256,7 +260,7 @@ def run(args: argparse.Namespace) -> int:
         event = strict_json(Path(args.event_path).read_text(encoding="utf-8"), "workflow event")
         if not isinstance(event, dict):
             raise Refusal("workflow event must be an object")
-        number, event_head, event_base = event_identity(event)
+        number, event_head, event_base = event_identity(event, args.pull_number)
         api, token = os.environ.get("GITHUB_API_URL", "https://api.github.com"), os.environ.get("GITHUB_TOKEN", "")
         if not token:
             raise Refusal("read-only GitHub token is unavailable")
@@ -279,6 +283,7 @@ def run(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--event-path", required=True)
+    parser.add_argument("--pull-number", default="")
     parser.add_argument("--claude-bin", required=True)
     return run(parser.parse_args())
 

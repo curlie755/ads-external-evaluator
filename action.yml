@@ -4,6 +4,9 @@ inputs:
   claude-bin:
     description: Absolute path to the caller-installed, integrity-verified Claude binary.
     required: true
+  pull-number:
+    description: Optional decimal pull-request number for trusted workflow_dispatch retries.
+    default: ""
 outputs:
   result:
     description: Strict, identity-bound external review result for the trusted caller to publish.
@@ -16,8 +19,10 @@ runs:
       shell: bash
       env:
         ADS_CLAUDE_BIN: ${{ inputs.claude-bin }}
+        ADS_PULL_NUMBER: ${{ inputs.pull-number }}
       run: |
         set -euo pipefail
         python3 "$GITHUB_ACTION_PATH/src/evaluate.py" \
           --event-path "$GITHUB_EVENT_PATH" \
+          --pull-number "$ADS_PULL_NUMBER" \
           --claude-bin "$ADS_CLAUDE_BIN"

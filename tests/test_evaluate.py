@@ -37,6 +37,11 @@ class EvaluatorControls(unittest.TestCase):
         event["pull_request"]["base"]["ref"] = "release"
         with self.assertRaises(evaluator.Refusal):
             evaluator.event_identity(event)
+        manual = {"repository": {"full_name": evaluator.TARGET_REPOSITORY}}
+        self.assertEqual(evaluator.event_identity(manual, "43"), (43, None, None))
+        for value in ("43; id", "01", "-1", "０１"):
+            with self.assertRaises(evaluator.Refusal):
+                evaluator.event_identity(manual, value)
 
     def test_material_bounds_and_blob_integrity(self):
         source = b"safe source\n"
@@ -98,7 +103,7 @@ class EvaluatorControls(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             event_path, output_path = Path(directory) / "event.json", Path(directory) / "output.txt"
             event_path.write_text(json.dumps(event), encoding="utf-8")
-            args = SimpleNamespace(event_path=str(event_path), claude_bin="/trusted/claude")
+            args = SimpleNamespace(event_path=str(event_path), pull_number="", claude_bin="/trusted/claude")
             with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "read", "GITHUB_OUTPUT": str(output_path)}, clear=True), mock.patch.object(evaluator, "identity", return_value=current), mock.patch.object(evaluator, "material", return_value={"files": [{"path": "safe.py"}]}), mock.patch.object(evaluator, "same_current", return_value=False), mock.patch.object(evaluator, "invoke_claude") as invoke:
                 self.assertEqual(evaluator.run(args), 0)
             result = json.loads(output_path.read_text().removeprefix("result="))
@@ -112,7 +117,7 @@ class EvaluatorControls(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             event_path, output_path = Path(directory) / "event.json", Path(directory) / "output.txt"
             event_path.write_text(json.dumps(event), encoding="utf-8")
-            args = SimpleNamespace(event_path=str(event_path), claude_bin="/trusted/claude")
+            args = SimpleNamespace(event_path=str(event_path), pull_number="", claude_bin="/trusted/claude")
             with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "read", "GITHUB_OUTPUT": str(output_path)}, clear=True), mock.patch.object(evaluator, "identity", return_value=current), mock.patch.object(evaluator, "material", return_value={"files": [{"path": "safe.py"}]}), mock.patch.object(evaluator, "same_current", return_value=True), mock.patch.object(evaluator, "invoke_claude", return_value=("PASS", "claude-opus-5", [])):
                 self.assertEqual(evaluator.run(args), 0)
             result = json.loads(output_path.read_text().removeprefix("result="))
