@@ -1,0 +1,19 @@
+name: ADS external bootstrap evaluator
+description: Read one Harness pull request as data, obtain bounded Claude review, and publish a distinct dedicated-App status.
+inputs:
+  claude-bin:
+    description: Absolute path to the caller-installed, integrity-verified Claude binary.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Evaluate source-only pull request
+      shell: bash
+      env:
+        ADS_CLAUDE_BIN: ${{ inputs.claude-bin }}
+      run: |
+        set -euo pipefail
+        python3 "$GITHUB_ACTION_PATH/src/evaluate.py" \
+          --event-path "$GITHUB_EVENT_PATH" \
+          --claude-bin "$ADS_CLAUDE_BIN" \
+          --target-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
