@@ -1,0 +1,9 @@
+# Work order 001 — external immutable bootstrap evaluator
+
+- **Objective:** provide a separately hosted action that gives a genuine Anthropic/Claude review to an exact Harness pull-request head when the Harness’s own trusted review workflow cannot yet review a change to its material ceiling.
+- **Scope:** read Harness PR metadata, tree entries and UTF-8 blobs only through GitHub REST; send bounded source text to the already-authorised Claude subscription route; post `ads/external-bootstrap-review` only through the existing dedicated statuses App.
+- **Non-goals:** no `actions/checkout` of Harness candidate code, no shell evaluation of candidate text, no source merge, no branch-protection edit, no credential storage, no direct paid API fallback and no review of PR #42 or #43 until this action is pinned by trusted Harness `main` source.
+- **Load-bearing premise:** the Harness can invoke this public action by an exact 40-character SHA while its `pull_request_target` workflow stays on trusted `main`; GitHub readback confirms all actions are allowed for that repository and both existing secret environments are `main`-only.
+- **Acceptance:** deterministic tests prove bounded REST-only collection, candidate text never becomes a command, model child receives neither GitHub nor App credentials, and only an exact current head can receive the distinct App status. Hosted exact-head evidence is required before the status becomes protected.
+- **Cost boundary:** retain the existing official Claude CLI route with its `--max-budget-usd 1` per run; do not create a new provider account, key or paid fallback.
+- **Recovery:** an action revision has no effect until a separately reviewed Harness pin changes; removing a caller pin or replacing it with a prior SHA is a source-only recovery, subject to Harness protection.
